@@ -42,12 +42,19 @@ int	ft_atoi(const char *s)
 #include <unistd.h>
 #include <sys/time.h>
 
+# define MAXTHREADS 200
 #define SECTONSEC 1000000000 /* sec to nanosec */
 # define USECTONSEC 1000 /* microsec to nanosec */
 # define MSECTOUSEC 1000 /* milisec to microsec */
 
+int		num_philo;
+long	time_to_die;
+long	time_to_eat;
+long	time_to_sleep;
+long	num_meals;
+int		no_option;
+
 const int kNumMeals = 3;
-const int no_option = 0;
 
 typedef struct	s_args
 {
@@ -112,7 +119,7 @@ void	eat(int id, pthread_mutex_t *left, pthread_mutex_t *right, int *permits, pt
 	pthread_mutex_lock(right);
 	print_status(utime(), id, "has taken a fork");
 	print_status(utime(), id, "is eating");
-	usleep(1000 * MSECTOUSEC);
+	usleep(time_to_eat * MSECTOUSEC);
 	grant_permission(permits, permits_lock);
 	pthread_mutex_unlock(left);
 	pthread_mutex_unlock(right);
@@ -125,32 +132,40 @@ void	*philosopher(void *args)
 	a = (t_args *)args;
 	print_status(utime(), a->id, "thread started");
 	int i = 0;
-	while (i < kNumMeals || no_option)
+	while (i < num_meals || no_option)
 	{
 		eat(a->id, a->left, a->right, a->permits, a->permits_lock);
 		print_status(utime(), a->id, "is sleeping");
-		usleep(1000 * MSECTOUSEC);
+		usleep(time_to_sleep * MSECTOUSEC);
 		print_status(utime(), a->id, "is thinking");
 		i++;
 	}
 	return ((void *)a);
 }
 
-int main(int argc, char *argv[])
+int	main(int argc, char *argv[])
 {
 	if (argc != 5 && argc != 6)
 	{
 		printf("Error: Invalid number of arguments\n");
 		return (1);
 	}
-
-	int num_philo = ft_atoi(argv[1]);
-	if (num_philo <= 1)
+	num_philo = ft_atoi(argv[1]);
+	time_to_die = ft_atoi(argv[2]);
+	time_to_eat = ft_atoi(argv[3]);
+	time_to_sleep = ft_atoi(argv[4]);
+	num_meals = argc == 6 ? ft_atoi(argv[5]) : 0;
+	no_option = argc == 6 ? 0 : 1;
+	if (num_philo <= 1 || num_philo > MAXTHREADS)
 	{
 		printf("Error: Invalid arguments\n");
 		return (1);
 	}
-	printf("num_philo: %d\n", num_philo);
+	if (time_to_die < 0 || time_to_eat < 0 || time_to_sleep < 0 || num_meals < 0)
+	{
+		printf("Error: Invalid arguments\n");
+		return (1);
+	}
 
 	int permits = num_philo - 1;
 	pthread_mutex_t permits_lock;
