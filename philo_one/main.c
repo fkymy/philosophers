@@ -220,7 +220,7 @@ void	*timer(void *args)
 			if (!global.death)
 			{
 				global.death = 1;
-				print_status(current_utime, p->id, "IS DEAD!");
+				print_status(current_utime, p->id, "died");
 			}
 			pthread_mutex_unlock(&global.death_lock);
 			break ;
@@ -293,7 +293,7 @@ void	start_dining(pthread_t *philosophers, pthread_mutex_t *forks, t_params *par
 	while (i < global.num_philo)
 	{
 		pthread_join(philosophers[i], NULL);
-		printf("pthread_join returned! i: %d\n", i);
+		/* printf("pthread_join returned! i: %d\n", i); */
 		i++;
 	}
 }
