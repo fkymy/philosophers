@@ -187,7 +187,7 @@ void	*timer(void *args)
 			break ;
 		}
 		sem_post(global.sem_last_meal);
-		usleep(10);
+		usleep(1);
 	}
 	sem_post(global.sem_last_meal);
 	return (NULL);

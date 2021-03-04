@@ -2,16 +2,6 @@
 #include <stdio.h>
 
 /* Utils */
-size_t	ft_strlen(const char *s)
-{
-	char *p;
-
-	p = (char *)s;
-	while (*p)
-		p++;
-	return (p - s);
-}
-
 int	ft_atoi(const char *s)
 {
 	int				i;
@@ -47,6 +37,8 @@ int	ft_atoi(const char *s)
 # define USECTONSEC 1000 /* microsec to nanosec */
 # define MSECTOUSEC 1000 /* milisec to microsec */
 
+# define STOP 1
+
 typedef struct		s_diner
 {
 	int				num_philo;
@@ -72,51 +64,39 @@ typedef struct		s_params
 	int				num_meals;
 }					t_params;
 
-typedef struct	s_timer
-{
-	int		id;
-	int		num_meals;
-	long	last_meal;
-}	t_timer;
-
 long	utime(void)
 {
-	struct timeval tv;
+	struct timeval	tv;
 
 	gettimeofday(&tv, NULL);
 	return (tv.tv_sec * 1000000 + tv.tv_usec);
 }
 
-void	ft_sleep(long end)
+long	mtime(void)
 {
+	struct timeval	tv;
+
+	gettimeofday(&tv, NULL);
+	return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+void	msleep(long mtime)
+{
+	long	end;
 	long	start;
 
+	end = mtime * 1000;
 	start = utime();
 	while (utime() - start < end)
 		usleep(10);
 }
 
-void	print_debug(long utime, int id, char *msg)
+void	print_status(long mtime, int id, char *msg)
 {
-	long	mtime;
 	int		idx;
 
-	long diff = utime - global.start_time;
-	mtime = diff / 1000;
 	idx = id + 1;
-	printf("					%ld %d %s\n", mtime, id, msg);
-}
-
-void	print_status(long utime, int id, char *msg)
-{
-	long	mtime;
-	int		idx;
-	long	diff;
-
-	diff = utime - global.start_time;
-	mtime = diff / 1000;
-	idx = id + 1;
-	printf("%ld %d %s\n", mtime, id, msg);
+	printf("%ld %d %s\n", mtime - global.start_time, id, msg);
 }
 
 int		update_status(int id, char *msg)
@@ -125,9 +105,9 @@ int		update_status(int id, char *msg)
 	if (global.death)
 	{
 		pthread_mutex_unlock(&global.death_lock);
-		return (1);
+		return (STOP);
 	}
-	print_status(utime(), id, msg);
+	print_status(mtime(), id, msg);
 	pthread_mutex_unlock(&global.death_lock);
 	return (0);
 }
@@ -136,28 +116,24 @@ void	update_last_meal(t_params *p)
 {
 	pthread_mutex_lock(&p->last_meal_lock);
 	p->num_meals++;
-	p->last_meal = utime();
+	p->last_meal = mtime();
 	pthread_mutex_unlock(&p->last_meal_lock);
 }
 
 int		pickup(t_params *p, pthread_mutex_t *first, pthread_mutex_t *second)
 {
-	int	err;
-
 	pthread_mutex_lock(first);
-	err = update_status(p->id, "has taken a fork");
-	if (err)
+	if (update_status(p->id, "has taken a fork") == STOP)
 	{
 		pthread_mutex_unlock(first);
-		return (1);
+		return (STOP);
 	}
 	pthread_mutex_lock(second);
-	err = update_status(p->id, "has taken a fork");
-	if (err)
+	if (update_status(p->id, "has taken a fork") == STOP)
 	{
 		pthread_mutex_unlock(first);
 		pthread_mutex_unlock(second);
-		return (1);
+		return (STOP);
 	}
 	return (0);
 }
@@ -168,44 +144,39 @@ void	putdown(pthread_mutex_t *first, pthread_mutex_t *second)
 	pthread_mutex_unlock(second);
 }
 
-int		eat(int id, pthread_mutex_t *left, pthread_mutex_t *right, t_params *p)
+int		eat_sleep(int id, pthread_mutex_t *left, pthread_mutex_t *right, t_params *p)
 {
-	int	err;
+	pthread_mutex_t	*first;
+	pthread_mutex_t	*second;
 
-	if (p->id % 2 == 0)
-		err = pickup(p, left, right);
-	else
-		err = pickup(p, right, left);
-	if (err)
+	first = p->id % 2 == 0 ? left : right;
+	second = p->id % 2 == 0 ? right : left;
+	if (pickup(p, first, second) == STOP)
 	{
-		putdown(left, right);
-		return (err);
+		putdown(first, second);
+		return (STOP);
 	}
-	err = update_status(id, "is eating");
-	if (err)
+	if (update_status(id, "is eating") == STOP)
 	{
-		putdown(left, right);
-		return (err);
+		putdown(first, second);
+		return (STOP);
 	}
 	update_last_meal(p);
-	ft_sleep(global.time_to_eat * MSECTOUSEC);
-	err = update_status(id, "is sleeping");
-	if (err)
+	msleep(global.time_to_eat);
+	if (update_status(id, "is sleeping") == STOP)
 	{
-		putdown(left, right);
-		return (err);
+		putdown(first, second);
+		return (STOP);
 	}
-	if (p->id % 2 == 0)
-		putdown(left, right);
-	else
-		putdown(right, left);
+	putdown(first, second);
+	msleep(global.time_to_sleep);
 	return (0);
 }
 
 void	*timer(void *args)
 {
 	t_params	*p;
-	long		current_utime;
+	long		now;
 
 	p = args;
 	while (1)
@@ -213,20 +184,20 @@ void	*timer(void *args)
 		pthread_mutex_lock(&p->last_meal_lock);
 		if (p->num_meals == global.num_meals && global.has_option)
 			break ;
-		current_utime = utime();
-		if (current_utime - p->last_meal > global.time_to_die * 1000)
+		now = mtime();
+		if (now - p->last_meal > global.time_to_die)
 		{
 			pthread_mutex_lock(&global.death_lock);
 			if (!global.death)
 			{
 				global.death = 1;
-				print_status(current_utime, p->id, "died");
+				print_status(now, p->id, "died");
 			}
 			pthread_mutex_unlock(&global.death_lock);
 			break ;
 		}
 		pthread_mutex_unlock(&p->last_meal_lock);
-		usleep(10);
+		usleep(1);
 	}
 	pthread_mutex_unlock(&p->last_meal_lock);
 	return (NULL);
@@ -237,20 +208,15 @@ void	*philosopher(void *args)
 	t_params	*p;
 	pthread_t	tid;
 	int			i;
-	int			err;
 
 	p = args;
 	pthread_create(&tid, NULL, timer, (void *)p);
 	i = 0;
-	err = 0;
 	while (i < global.num_meals || !global.has_option)
 	{
-		err = eat(p->id, p->left, p->right, p);
-		if (err)
+		if (eat_sleep(p->id, p->left, p->right, p) == STOP)
 			break ;
-		usleep(global.time_to_sleep * MSECTOUSEC);
-		err = update_status(p->id, "is thinking");
-		if (err)
+		if (update_status(p->id, "is thinking") == STOP)
 			break ;
 		i++;
 	}
@@ -275,9 +241,11 @@ int	setup_locks(pthread_mutex_t *forks, t_params *params)
 
 void	start_dining(pthread_t *philosophers, pthread_mutex_t *forks, t_params *params)
 {
-	int	i;
+	int		i;
+	long	now;
 
-	global.start_time = utime();
+	now = mtime();
+	global.start_time = now;
 	i = 0;
 	while (i < global.num_philo)
 	{
@@ -285,17 +253,13 @@ void	start_dining(pthread_t *philosophers, pthread_mutex_t *forks, t_params *par
 		params[i].left = &forks[i];
 		params[i].right = &forks[(i + 1) % global.num_philo];
 		params[i].num_meals = 0;
-		params[i].last_meal = utime();
+		params[i].last_meal = now;
 		pthread_create(&philosophers[i], NULL, philosopher, (void *)(params + i));
 		i++;
 	}
 	i = 0;
 	while (i < global.num_philo)
-	{
-		pthread_join(philosophers[i], NULL);
-		/* printf("pthread_join returned! i: %d\n", i); */
-		i++;
-	}
+		pthread_join(philosophers[i++], NULL);
 }
 
 int	setup_diner(int argc, char *argv[])
@@ -342,4 +306,3 @@ int	main(int argc, char *argv[])
 	free(params);
 	return (0);
 }
-
