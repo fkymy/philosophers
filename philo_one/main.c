@@ -96,7 +96,7 @@ void	print_status(long mtime, int id, char *msg)
 	int		idx;
 
 	idx = id + 1;
-	printf("%ld %d %s\n", mtime - global.start_time, id, msg);
+	printf("%ld %d %s\n", mtime - global.start_time, idx, msg);
 }
 
 int		update_status(int id, char *msg)
@@ -146,29 +146,24 @@ void	putdown(pthread_mutex_t *first, pthread_mutex_t *second)
 
 int		eat_sleep(int id, pthread_mutex_t *left, pthread_mutex_t *right, t_params *p)
 {
-	pthread_mutex_t	*first;
-	pthread_mutex_t	*second;
-
-	first = p->id % 2 == 0 ? left : right;
-	second = p->id % 2 == 0 ? right : left;
-	if (pickup(p, first, second) == STOP)
+	if (pickup(p, left, right) == STOP)
 	{
-		putdown(first, second);
+		putdown(left, right);
 		return (STOP);
 	}
 	if (update_status(id, "is eating") == STOP)
 	{
-		putdown(first, second);
+		putdown(left, right);
 		return (STOP);
 	}
 	update_last_meal(p);
 	msleep(global.time_to_eat);
 	if (update_status(id, "is sleeping") == STOP)
 	{
-		putdown(first, second);
+		putdown(left, right);
 		return (STOP);
 	}
-	putdown(first, second);
+	putdown(left, right);
 	msleep(global.time_to_sleep);
 	return (0);
 }
@@ -197,7 +192,7 @@ void	*timer(void *args)
 			break ;
 		}
 		pthread_mutex_unlock(&p->last_meal_lock);
-		usleep(1);
+		usleep(10);
 	}
 	pthread_mutex_unlock(&p->last_meal_lock);
 	return (NULL);
@@ -210,6 +205,8 @@ void	*philosopher(void *args)
 	int			i;
 
 	p = args;
+	if (p->id % 2 == 0)
+		usleep(1000);
 	pthread_create(&tid, NULL, timer, (void *)p);
 	i = 0;
 	while (i < global.num_meals || !global.has_option)

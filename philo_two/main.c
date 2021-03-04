@@ -97,7 +97,7 @@ void	print_status(long mtime, int id, char *msg)
 	int		idx;
 
 	idx = id + 1;
-	printf("%ld %d %s\n", mtime - global.start_time, id, msg);
+	printf("%ld %d %s\n", mtime - global.start_time, idx, msg);
 }
 
 int		update_status(int id, char *msg)
@@ -187,7 +187,7 @@ void	*timer(void *args)
 			break ;
 		}
 		sem_post(global.sem_last_meal);
-		usleep(1);
+		usleep(10);
 	}
 	sem_post(global.sem_last_meal);
 	return (NULL);
@@ -232,11 +232,7 @@ void	start_dining(pthread_t *philosophers, t_params *params)
 	}
 	i = 0;
 	while (i < global.num_philo)
-	{
-		pthread_join(philosophers[i], NULL);
-		printf("pthread_join returned! i: %d\n", i);
-		i++;
-	}
+		pthread_join(philosophers[i++], NULL);
 }
 
 void	setup_sem(void)
