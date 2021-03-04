@@ -132,11 +132,11 @@ int		update_status(int id, char *msg)
 	return (0);
 }
 
-void	update_last_meal(t_params *p, long utime)
+void	update_last_meal(t_params *p)
 {
 	pthread_mutex_lock(&p->last_meal_lock);
 	p->num_meals++;
-	p->last_meal = utime;
+	p->last_meal = utime();
 	pthread_mutex_unlock(&p->last_meal_lock);
 }
 
@@ -187,7 +187,7 @@ int		eat(int id, pthread_mutex_t *left, pthread_mutex_t *right, t_params *p)
 		putdown(left, right);
 		return (err);
 	}
-	update_last_meal(p, utime());
+	update_last_meal(p);
 	ft_sleep(global.time_to_eat * MSECTOUSEC);
 	err = update_status(id, "is sleeping");
 	if (err)

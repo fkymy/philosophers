@@ -2,16 +2,6 @@
 #include <stdio.h>
 
 /* Utils */
-size_t	ft_strlen(const char *s)
-{
-	char *p;
-
-	p = (char *)s;
-	while (*p)
-		p++;
-	return (p - s);
-}
-
 int	ft_atoi(const char *s)
 {
 	int				i;
@@ -48,6 +38,8 @@ int	ft_atoi(const char *s)
 # define USECTONSEC 1000 /* microsec to nanosec */
 # define MSECTOUSEC 1000 /* milisec to microsec */
 
+# define STOP 1
+
 typedef struct		s_diner
 {
 	int				num_philo;
@@ -58,7 +50,6 @@ typedef struct		s_diner
 	int				has_option;
 	long			start_time;
 	int				death;
-	// pthread_mutex_t	death_lock;
 	sem_t			*sem_permits;
 	sem_t			*sem_forks;
 	sem_t			*sem_death;
@@ -70,9 +61,6 @@ t_diner	global;
 typedef struct		s_params
 {
 	int				id;
-	// pthread_mutex_t	*left;
-	// pthread_mutex_t	*right;
-	// pthread_mutex_t	last_meal_lock;
 	long			last_meal;
 	int				num_meals;
 }					t_params;
@@ -85,36 +73,31 @@ long	utime(void)
 	return (tv.tv_sec * 1000000 + tv.tv_usec);
 }
 
-void	ft_sleep(long end)
+long	mtime(void)
 {
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+	return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+void	msleep(long mtime)
+{
+	long	end;
 	long	start;
 
+	end = mtime * 1000;
 	start = utime();
 	while (utime() - start < end)
 		usleep(10);
 }
 
-void	print_debug(long utime, int id, char *msg)
+void	print_status(long mtime, int id, char *msg)
 {
-	long	mtime;
 	int		idx;
 
-	long diff = utime - global.start_time;
-	mtime = diff / 1000;
 	idx = id + 1;
-	printf("					%ld %d %s\n", mtime, id, msg);
-}
-
-void	print_status(long utime, int id, char *msg)
-{
-	long	mtime;
-	int		idx;
-	long	diff;
-
-	diff = utime - global.start_time;
-	mtime = diff / 1000;
-	idx = id + 1;
-	printf("%ld %d %s\n", mtime, id, msg);
+	printf("%ld %d %s\n", mtime - global.start_time, id, msg);
 }
 
 int		update_status(int id, char *msg)
@@ -123,87 +106,67 @@ int		update_status(int id, char *msg)
 	if (global.death)
 	{
 		sem_post(global.sem_death);
-		return (1);
+		return (STOP);
 	}
-	print_status(utime(), id, msg);
+	print_status(mtime(), id, msg);
 	sem_post(global.sem_death);
 	return (0);
 }
 
-void	update_last_meal(t_params *p, long utime)
+void	update_last_meal(t_params *p)
 {
 	sem_wait(global.sem_last_meal);
 	p->num_meals++;
-	p->last_meal = utime;
+	p->last_meal = mtime();
 	sem_post(global.sem_last_meal);
 }
 
-int		pickup(t_params *p, pthread_mutex_t *first, pthread_mutex_t *second)
+int		ask_for_forks(int id)
 {
-	int	err;
-
-	pthread_mutex_lock(first);
-	err = update_status(p->id, "has taken a fork");
-	if (err)
+	sem_wait(global.sem_permits);
+	sem_wait(global.sem_forks);
+	if (update_status(id, "has taken a fork") == STOP)
 	{
-		pthread_mutex_unlock(first);
-		return (1);
+		sem_post(global.sem_forks);
+		sem_post(global.sem_permits);
+		return (STOP);
 	}
-	pthread_mutex_lock(second);
-	err = update_status(p->id, "has taken a fork");
-	if (err)
+	sem_wait(global.sem_forks);
+	if (update_status(id, "has taken a fork") == STOP)
 	{
-		pthread_mutex_unlock(first);
-		pthread_mutex_unlock(second);
-		return (1);
+		sem_post(global.sem_forks);
+		sem_post(global.sem_forks);
+		sem_post(global.sem_permits);
+		return (STOP);
 	}
+	sem_post(global.sem_permits);
 	return (0);
 }
 
-int		eat(int id, t_params *p)
+int		eat_sleep(int id, t_params *p)
 {
-	int	err;
-
-	sem_wait(global.sem_permits);
-	sem_wait(global.sem_forks);
-	err = update_status(id, "has taken a fork");
-	if (err)
-	{
-		sem_post(global.sem_forks);
-		sem_post(global.sem_permits);
-		return (err);
-	}
-	sem_wait(global.sem_forks);
-	err = update_status(id, "has taken a fork");
-	if (err)
+	if (ask_for_forks(id) == STOP)
+		return (STOP);
+	if (update_status(id, "is eating") == STOP)
 	{
 		sem_post(global.sem_forks);
 		sem_post(global.sem_forks);
-		sem_post(global.sem_permits);
-		return (err);
+		return (STOP);
 	}
-	sem_post(global.sem_permits);
-	err = update_status(id, "is eating");
-	if (err)
-	{
-		sem_post(global.sem_forks);
-		sem_post(global.sem_forks);
-		return (err);
-	}
-	update_last_meal(p, utime());
-	ft_sleep(global.time_to_eat * MSECTOUSEC);
+	update_last_meal(p);
+	msleep(global.time_to_eat);
 	sem_post(global.sem_forks);
 	sem_post(global.sem_forks);
-	err = update_status(id, "is sleeping");
-	if (err)
-		return (err);
+	if (update_status(id, "is sleeping") == STOP)
+		return (STOP);
+	msleep(global.time_to_sleep);
 	return (0);
 }
 
 void	*timer(void *args)
 {
 	t_params	*p;
-	long		current_utime;
+	long		now;
 
 	p = args;
 	while (1)
@@ -211,14 +174,14 @@ void	*timer(void *args)
 		sem_wait(global.sem_last_meal);
 		if (p->num_meals == global.num_meals && global.has_option)
 			break ;
-		current_utime = utime();
-		if (current_utime - p->last_meal > global.time_to_die * 1000)
+		now = mtime();
+		if (now - p->last_meal > global.time_to_die)
 		{
 			sem_wait(global.sem_death);
 			if (!global.death)
 			{
 				global.death = 1;
-				print_status(current_utime, p->id, "died");
+				print_status(now, p->id, "died");
 			}
 			sem_post(global.sem_death);
 			break ;
@@ -235,20 +198,15 @@ void	*philosopher(void *args)
 	t_params	*p;
 	pthread_t	tid;
 	int			i;
-	int			err;
 
 	p = args;
 	pthread_create(&tid, NULL, timer, (void *)p);
 	i = 0;
-	err = 0;
 	while (i < global.num_meals || !global.has_option)
 	{
-		err = eat(p->id, p);
-		if (err)
+		if (eat_sleep(p->id, p) == STOP)
 			break ;
-		usleep(global.time_to_sleep * MSECTOUSEC);
-		err = update_status(p->id, "is thinking");
-		if (err)
+		if (update_status(p->id, "is thinking") == STOP)
 			break ;
 		i++;
 	}
@@ -258,15 +216,17 @@ void	*philosopher(void *args)
 
 void	start_dining(pthread_t *philosophers, t_params *params)
 {
-	int	i;
+	int		i;
+	long	now;
 
-	global.start_time = utime();
+	now = mtime();
+	global.start_time = now;
 	i = 0;
 	while (i < global.num_philo)
 	{
 		params[i].id = i;
 		params[i].num_meals = 0;
-		params[i].last_meal = utime();
+		params[i].last_meal = now;
 		pthread_create(&philosophers[i], NULL, philosopher, (void *)(params + i));
 		i++;
 	}
@@ -281,8 +241,9 @@ void	start_dining(pthread_t *philosophers, t_params *params)
 
 void	setup_sem(void)
 {
+	// these can return SEM_FAILED
 	global.sem_forks = sem_open("/forks", O_CREAT | O_EXCL, 0644, global.num_philo);
-	global.sem_permits = sem_open("/permits", O_CREAT | O_EXCL, 0644, global.num_philo / 2);
+	global.sem_permits = sem_open("/permits", O_CREAT | O_EXCL, 0644, 1);
 	global.sem_death = sem_open("/death", O_CREAT | O_EXCL, 0644, 1);
 	global.sem_last_meal = sem_open("/last_meal", O_CREAT | O_EXCL, 0644, 1);
 	sem_unlink("/forks");
