@@ -11,7 +11,7 @@ HDR := philo_one.h
 NAME := philo_one
 
 CC := gcc
-CFLAGS := -Wall -Wextra -Werror -fsanitize=address
+CFLAGS := -Wall -Wextra -Werror
 
 BINDIR := /usr/local/bin
 

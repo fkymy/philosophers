@@ -32,12 +32,12 @@ int	ft_atoi(const char *s)
 #include <unistd.h>
 #include <sys/time.h>
 #include <semaphore.h>
+#include <signal.h>
 
-# define MAXTHREADS 200
 # define SECTONSEC 1000000000 /* sec to nanosec */
 # define USECTONSEC 1000 /* microsec to nanosec */
 # define MSECTOUSEC 1000 /* milisec to microsec */
-
+# define MAXTHREADS 200
 # define STOP 1
 
 typedef struct		s_diner
@@ -54,20 +54,10 @@ typedef struct		s_diner
 	sem_t			*sem_permits;
 	sem_t			*sem_forks;
 	sem_t			*sem_death;
-	sem_t			*sem_stop;
-	sem_t			*sem_done;
 	sem_t			*sem_last_meal;
 }					t_diner;
 
 t_diner	global;
-
-typedef struct		s_philo
-{
-	int				id;
-	pid_t			pid;
-	long			last_meal;
-	int				num_meals;
-}					t_philo;
 
 typedef struct		s_params
 {
@@ -176,7 +166,7 @@ int		eat_sleep(int id, t_params *p)
 
 void	*timer(void *args)
 {
-	t_philo	*p;
+	t_params	*p;
 	long		now;
 
 	p = args;
@@ -193,6 +183,7 @@ void	*timer(void *args)
 			{
 				global.death = 1;
 				print_status(now, p->id, "died");
+				exit(1);
 			}
 			sem_post(global.sem_death);
 			break ;
@@ -209,162 +200,82 @@ void	*philosopher(void *args)
 	t_params	*p;
 	pthread_t	tid;
 	int			i;
-	int			status;
-	pid_t		pid;
 
 	p = args;
-
-	pid = fork();
-	if (pid == 0)
-	{
-		pthread_create(&tid, NULL, timer, (void *)p);
-		i = 0;
-		while (i < global.num_meals || !global.has_option)
-		{
-			if (eat_sleep(p->id, p) == STOP)
-				exit(1);
-			if (update_status(p->id, "is thinking") == STOP)
-				exit(1);
-			i++;
-		}
-		pthread_join(tid, NULL);
-		exit(0);
-	}
-
-	waitpid(pid, &status, 0);
-	if (WIFEXITED(status))
-	{
-		if (WEXITSTATUS(status) == 1)
-		{
-			// kill all except p->id
-			sem_post(global.sem_stop);
-		}
-		else if (WEXITSTATUS(status) == 0)
-		{
-			sem_wait(global.sem_done);
-			global.done++;
-			if (global.done == global.num_philo)
-				sem_post(global.sem_stop);
-			sem_post(global.sem_done);
-		}
-	}
-	return ((void *)p);
-}
-
-void	*philosopher_old(void *args)
-{
-	t_params	*p;
-	pthread_t	tid;
-	int			i;
-
-	p = args;
+	p->last_meal = mtime();
 	pthread_create(&tid, NULL, timer, (void *)p);
 	i = 0;
 	while (i < global.num_meals || !global.has_option)
 	{
 		if (eat_sleep(p->id, p) == STOP)
-			break ;
+			exit(1);
 		if (update_status(p->id, "is thinking") == STOP)
-			break ;
+			exit(1);
 		i++;
 	}
 	pthread_join(tid, NULL);
 	return ((void *)p);
 }
 
-void	monitor_processes(t_philo *philosophers)
+pid_t	monitor_philosophers(void)
 {
-	int	i;
-	int	status;
-	int	count;
+	pid_t	pid;
+	int		i;
+	int		status;
+	int		count;
 
 	count = 0;
-	while (1)
+	i = 0;
+	while (i < global.num_philo)
+	{
+		status = 0;
+		pid = waitpid(-1, &status, 0);
+		if (WIFEXITED(status))
+		{
+			if (WEXITSTATUS(status) == 1)
+				return (pid);
+			else if (WEXITSTATUS(status) == 0)
+			{
+				count++;
+				if (count == global.num_philo)
+					break ;
+			}
+		}
+		i++;
+	}
+	return (-1);
+}
+
+void	start_dining(pid_t *philosophers, t_params *params)
+{
+	int		i;
+	pid_t	pid;
+
+	global.start_time = mtime();
+	i = 0;
+	while (i < global.num_philo)
+	{
+		params[i].id = i;
+		params[i].num_meals = 0;
+		if ((philosophers[i] = fork()) < 0)
+			exit(1);
+		else if (philosophers[i] == 0)
+			philosopher(params + i);
+		i++;
+	}
+	pid = monitor_philosophers();
+	if (pid == -1)
+		printf("all philosophers done eating!\n");
+	else
 	{
 		i = 0;
 		while (i < global.num_philo)
 		{
-			status = 0;
-			waitpid(philosophers[i].pid, &status, WNOHANG);
-			if (status == 256 || status == 0)
-			{
-				if (status == 0)
-					if (++count != global.num_meals)
-						continue ;
-				break ;
-			}
+			if (philosophers[i] != pid)
+				kill(philosophers[i], SIGKILL);
 			i++;
 		}
-		// if (status == 256 || count == global.num_meals)
-		// kill all
 	}
-}
-
-void	start_dining_act(t_philo *philosophers)
-{
-	int		i;
-	long	now;
-
-	now = mtime();
-	global.start_time = now;
-	i = 0;
-	while (i < global.num_philo)
-	{
-		philosophers[i].id = i;
-		philosophers[i].num_meals = 0;
-		philosophers[i].last_meal = now;
-		if ((philosophers[i].pid = fork()) < 0)
-			exit(1);
-		else if (philosophers[i].pid == 0)
-		{
-			philosopher(philosophers + i);
-			exit(global.death);
-		}
-		i++;
-	}
-	monitor_processes(philosophers);
-}
-
-void	start_dining(pthread_t *philosophers, t_params *params)
-{
-	int		i;
-	long	now;
-
-	now = mtime();
-	global.start_time = now;
-	i = 0;
-	while (i < global.num_philo)
-	{
-		params[i].id = i;
-		params[i].num_meals = 0;
-		params[i].last_meal = now;
-		pthread_create(&philosophers[i], NULL, philosopher, (void *)(params + i));
-		pthread_detach(philosophers[i]);
-		i++;
-	}
-	sem_wait(global.sem_stop);
-	printf("sem_stop posted!\n");
-}
-
-void	start_dining_old(pthread_t *philosophers, t_philo *params)
-{
-	int		i;
-	long	now;
-
-	now = mtime();
-	global.start_time = now;
-	i = 0;
-	while (i < global.num_philo)
-	{
-		params[i].id = i;
-		params[i].num_meals = 0;
-		params[i].last_meal = now;
-		pthread_create(&philosophers[i], NULL, philosopher, (void *)(params + i));
-		i++;
-	}
-	i = 0;
-	while (i < global.num_philo)
-		pthread_join(philosophers[i++], NULL);
 }
 
 void	setup_sem(void)
@@ -374,14 +285,10 @@ void	setup_sem(void)
 	global.sem_permits = sem_open("/permits", O_CREAT | O_EXCL, 0644, 1);
 	global.sem_death = sem_open("/death", O_CREAT | O_EXCL, 0644, 1);
 	global.sem_last_meal = sem_open("/last_meal", O_CREAT | O_EXCL, 0644, 1);
-	global.sem_stop = sem_open("/stop", O_CREAT | O_EXCL, 0644, 0);
-	global.sem_done = sem_open("/done", O_CREAT | O_EXCL, 0644, 1);
 	sem_unlink("/forks");
 	sem_unlink("/permits");
 	sem_unlink("/death");
 	sem_unlink("/last_meal");
-	sem_unlink("/stop");
-	sem_unlink("/done");
 }
 
 int	setup_diner(int argc, char *argv[])
@@ -406,13 +313,13 @@ int	setup_diner(int argc, char *argv[])
 
 int	main(int argc, char *argv[])
 {
-	pthread_t	*philosophers;
+	pid_t		*philosophers;
 	t_params	*params;
 
 	if (setup_diner(argc, argv) < 0)
 		return (printf("Error: Invalid arguments\n"));
 	params = malloc(sizeof(t_params) * global.num_philo);
-	philosophers = malloc(sizeof(pthread_t) * global.num_philo);
+	philosophers = malloc(sizeof(pid_t) * global.num_philo);
 	start_dining(philosophers, params);
 
 	/* clean up */
@@ -421,6 +328,7 @@ int	main(int argc, char *argv[])
 	sem_close(global.sem_death);
 	sem_close(global.sem_last_meal);
 	free(philosophers);
+	free(params);
 	return (0);
 }
 

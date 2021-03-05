@@ -11,7 +11,7 @@ HDR := philosophers.h
 NAME := philo_two
 
 CC := gcc
-CFLAGS := -Wall -Wextra -Werror -fsanitize=address
+CFLAGS := -Wall -Wextra -Werror
 
 BINDIR := /usr/local/bin
 

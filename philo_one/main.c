@@ -80,14 +80,12 @@ long	mtime(void)
 	return (tv.tv_sec * 1000 + tv.tv_usec / 1000);
 }
 
-void	msleep(long mtime)
+void	msleep(long end)
 {
-	long	end;
 	long	start;
 
-	end = mtime * 1000;
-	start = utime();
-	while (utime() - start < end)
+	start = mtime();
+	while (mtime() - start < end)
 		usleep(10);
 }
 
@@ -146,24 +144,29 @@ void	putdown(pthread_mutex_t *first, pthread_mutex_t *second)
 
 int		eat_sleep(int id, pthread_mutex_t *left, pthread_mutex_t *right, t_params *p)
 {
-	if (pickup(p, left, right) == STOP)
+	pthread_mutex_t	*first;
+	pthread_mutex_t	*second;
+
+	first = p->id % 2 == 0 ? left : right;
+	second = p->id % 2 == 0 ? right : left;
+	if (pickup(p, first, second) == STOP)
 	{
-		putdown(left, right);
+		putdown(first, second);
 		return (STOP);
 	}
 	if (update_status(id, "is eating") == STOP)
 	{
-		putdown(left, right);
+		putdown(first, second);
 		return (STOP);
 	}
 	update_last_meal(p);
 	msleep(global.time_to_eat);
 	if (update_status(id, "is sleeping") == STOP)
 	{
-		putdown(left, right);
+		putdown(first, second);
 		return (STOP);
 	}
-	putdown(left, right);
+	putdown(first, second);
 	msleep(global.time_to_sleep);
 	return (0);
 }
@@ -205,8 +208,6 @@ void	*philosopher(void *args)
 	int			i;
 
 	p = args;
-	if (p->id % 2 == 0)
-		usleep(1000);
 	pthread_create(&tid, NULL, timer, (void *)p);
 	i = 0;
 	while (i < global.num_meals || !global.has_option)
