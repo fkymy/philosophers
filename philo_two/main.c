@@ -6,7 +6,7 @@
 /*   By: yufukuya <marvin@42.fr>                    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2021/03/06 16:07:07 by yufukuya          #+#    #+#             */
-/*   Updated: 2021/03/06 16:09:06 by yufukuya         ###   ########.fr       */
+/*   Updated: 2021/03/06 16:12:23 by yufukuya         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,8 @@
 #include <sys/time.h>
 #include <semaphore.h>
 #include "philosophers.h"
+
+t_diner	g_diner;
 
 void	setup_sem(void)
 {

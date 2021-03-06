@@ -1,8 +1,8 @@
-# Makefile for philosophers, updated Mon Mar  1 11:45:20 JST 2021
+# Makefile for philosophers, updated Sat Mar  6 16:59:44 JST 2021
 
-SRC := main.c
+SRC := dine.c eat_sleep.c main.c monitor.c utils.c
 
-OBJ := main.o
+OBJ := dine.o eat_sleep.o main.o monitor.o utils.o
 
 HDR := philosophers.h
 
