@@ -1,10 +1,10 @@
-# Makefile for philosophers, updated Mon Mar  1 11:45:20 JST 2021
+# Makefile for philosophers, updated Sat Mar  6 15:38:39 JST 2021
 
-SRC := main.c
+SRC := dine.c eat_sleep.c main.c utils.c
 
-OBJ := main.o
+OBJ := dine.o eat_sleep.o main.o utils.o
 
-HDR := philo_one.h
+HDR := philosophers.h
 
 # DO NOT ADD OR MODIFY ANY LINES ABOVE THIS -- run 'make source' to add files
 
