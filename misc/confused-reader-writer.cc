@@ -1,9 +1,7 @@
 /**
  * Implements the classic reader-writer thread example, where
  * one thread writes to a shared buffer and a second thread reads
- * from it.  This version uses thread coordination to ensure that the
- * reader only reads valid data and the writer doesn't overwrite unread
- * data.
+ * from it.  This version uses no thread coordination and is BUGGY!
  */
 
 #include <mutex>
@@ -76,27 +74,16 @@ static void printBuffer(char buffer[], size_t bufferSize) {
  * - bufferSize: the size of the buffer (# slots), in bytes
  * - iterations: how many times we should loop through the buffer, writing
  *              random contents to each slot.
- * - fullBufferSlots: a semaphore coordinating when there is data to be read
- * - emptyBufferSlots: a semaphore coordinating when there is space for new data
- *          to be written.
  *
  * Returns: N/A
  */
-static void writeToBuffer(char buffer[], size_t bufferSize, size_t iterations,
-  semaphore& fullBufferSlots, semaphore& emptyBufferSlots) {
-
+static void writeToBuffer(char buffer[], size_t bufferSize, size_t iterations) {
   cout << oslock << "Writer: ready to write." << endl << osunlock;
   for (size_t i = 0; i < iterations * bufferSize; i++) {
+
     char ch = prepareData();
-
-    // Wait for space before writing
-    emptyBufferSlots.wait();
-
     buffer[i % bufferSize] = ch;
-
-    // Signal that there is content to read
-    fullBufferSlots.signal();
-
+    
     cout << oslock << "Writer: published data packet with character '" 
       << ch << "'.\t\t" << osunlock;
     printBuffer(buffer, bufferSize);
@@ -110,28 +97,17 @@ static void writeToBuffer(char buffer[], size_t bufferSize, size_t iterations,
  *           order, from front to back.  
  * - bufferSize: the size of the buffer (# slots), in bytes
  * - iterations: how many times we should loop through the buffer, reading it
- * - fullBufferSlots: a semaphore coordinating when there is data to be read
- * - emptyBufferSlots: a semaphore coordinating when there is space for new data
- *          to be written.
  *
  * Returns: N/A
  */
-static void readFromBuffer(char buffer[], size_t bufferSize, size_t iterations,
-  semaphore& fullBufferSlots, semaphore& emptyBufferSlots) {
-
+static void readFromBuffer(char buffer[], size_t bufferSize, size_t iterations) {
   cout << oslock << "Reader: ready to read." << endl << osunlock;
   for (size_t i = 0; i < iterations * bufferSize; i++) {
-
-    // Wait for content before reading
-    fullBufferSlots.wait();
 
     // Read and process the data
     char ch = buffer[i % bufferSize];
     processData(ch); // sleep to simulate work
     buffer[i % bufferSize] = ' ';
-
-    // Signal that there is space to write more content
-    emptyBufferSlots.signal();
 
     cout << oslock << "Reader: consumed data packet " 
       << "with character '" << ch << "'.\t\t" << osunlock;
@@ -144,14 +120,8 @@ int main(int argc, const char *argv[]) {
   char buffer[kNumBufferSlots];
   memset(buffer, ' ', sizeof(buffer));
 
-  // Semaphores representing how many "permits" are available for reading/writing
-  semaphore fullBufferSlots;
-  semaphore emptyBufferSlots(sizeof(buffer));
-
-  thread writer(writeToBuffer, buffer, sizeof(buffer), kNumIterations, 
-    ref(fullBufferSlots), ref(emptyBufferSlots));
-  thread reader(readFromBuffer, buffer, sizeof(buffer), kNumIterations, 
-    ref(fullBufferSlots), ref(emptyBufferSlots));
+  thread writer(writeToBuffer, buffer, sizeof(buffer), kNumIterations);
+  thread reader(readFromBuffer, buffer, sizeof(buffer), kNumIterations);
   writer.join();
   reader.join();
   return 0;
